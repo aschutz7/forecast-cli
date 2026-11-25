@@ -1,3 +1,5 @@
+mod weather;
+
 fn main() {
-    println!("Hello, world!");
+    println!("{}", weather::test_form_req_url());
 }
