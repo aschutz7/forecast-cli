@@ -133,7 +133,7 @@ pub struct ForecastResponse {
     pub daily: DailyForecast,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct TomorrowForecast {
     pub date: String,
     pub high: f64,

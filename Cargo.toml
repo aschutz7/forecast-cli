@@ -7,6 +7,7 @@ edition = "2024"
 anyhow = "1.0.105"
 clap = { version = "4.6.10", features = ["derive"] }
 colored = "3.1.1"
+comfy-table = "8.0.1"
 reqwest = { version = "0.13.5", features = ["blocking", "json"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
