@@ -1,37 +1,18 @@
-/* sample req url:
-https://api.open-meteo.com/v1/forecast
-?latitude=30.57881
-&longitude=-97.85307
-&daily=
-    temperature_2m_max,
-    temperature_2m_min,
-    weather_code,
-    apparent_temperature_min,
-    apparent_temperature_max,
-    wind_speed_10m_max,
-    precipitation_probability_max
-&hourly=
-    temperature_2m,
-    apparent_temperature,
-    precipitation_probability,
-    precipitation,
-    weather_code,
-    wind_speed_10m
-&timezone=auto
-&forecast_days=3
-&wind_speed_unit=mph
-&temperature_unit=fahrenheit
-&precipitation_unit=inch
-*/
-
+use reqwest::{Error, Result, get};
 use serde::{Deserialize, Serialize};
 
-struct Defaults {
+struct ForecastDefaults {
     timezone: &'static str,
-    forecast_days: i8,
+    forecast_days: u8,
     wind_speed_unit: &'static str,
     temperature_unit: &'static str,
     precipitation_unit: &'static str,
+}
+
+struct GeocodingDefaults {
+    count: u8,              // 10
+    language: &'static str, // en
+    format: &'static str,   // json
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -86,36 +67,130 @@ impl HourlyOpts {
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct GeocodingRequestData {
-    pub name: String, // zip code or search content
-    pub count: u8, // 10
+    pub name: String,     // zip code or search content
+    pub count: u8,        // 10
     pub language: String, // en
-    pub format: String, // json
+    pub format: String,   // json
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct WeatherRequestData {
+pub struct GeocodingSearchResult {
+    pub id: u64,
+    pub name: String,
+    pub latitude: f64,
+    pub longitude: f64,
+    pub elevation: Option<f64>,
+    pub feature_code: Option<String>,
+    pub country_code: Option<String>,
+    pub admin1_id: Option<u64>,
+    pub admin2_id: Option<u64>,
+    pub timezone: Option<String>,
+    pub population: Option<u32>,
+    #[serde(default)] // empty array by default
+    pub postcodes: Vec<String>,
+    pub country_id: Option<u64>,
+    pub country: Option<String>,
+    pub admin1: Option<String>,
+    pub admin2: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct GeocodingResponse {
+    #[serde(default)] // once again, empty array by default to prevent unhandled cases
+    pub results: Vec<GeocodingSearchResult>,
+    pub generationtime_ms: f64,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct ForecastRequestData {
     pub latitude: f64,
     pub longitude: f64,
     pub daily: Vec<DailyOpts>,
     pub hourly: Vec<HourlyOpts>,
     pub timezone: String,
-    pub forecast_days: i8,
+    pub forecast_days: u8,
     pub wind_speed_unit: String,
     pub temperature_unit: String,
     pub precipitation_unit: String,
 }
 
+#[derive(Serialize, Deserialize, Debug)]
+pub struct ForecastResponse {
+    pub latitude: f64,
+    pub longitude: f64,
+    pub elevation: f64,
+    pub generationtime_ms: f64,
+    pub utc_offset_seconds: i32,
+    pub timezone: String,
+    pub timezone_abbreviation: String,
+    pub hourly_units: HourlyUnits,
+    pub hourly: HourlyForecast,
+    pub daily_units: DailyUnits,
+    pub daily: DailyForecast,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct HourlyForecast {
+    pub time: Vec<String>,
+    pub temperature_2m: Vec<f64>,
+    pub apparent_temperature: Vec<f64>,
+    pub precipitation_probability: Vec<u8>,
+    pub precipitation: Vec<f64>,
+    pub weather_code: Vec<u8>,
+    pub wind_speed_10m: Vec<f64>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct DailyForecast {
+    pub time: Vec<String>,
+    pub temperature_2m_max: Vec<f64>,
+    pub temperature_2m_min: Vec<f64>,
+    pub weather_code: Vec<u8>,
+    pub apparent_temperature_min: Vec<f64>,
+    pub apparent_temperature_max: Vec<f64>,
+    pub wind_speed_10m_max: Vec<f64>,
+    pub precipitation_probability_max: Vec<u8>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct HourlyUnits {
+    pub time: String,
+    pub temperature_2m: String,
+    pub apparent_temperature: String,
+    pub precipitation_probability: String,
+    pub precipitation: String,
+    pub weather_code: String,
+    pub wind_speed_10m: String,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct DailyUnits {
+    pub time: String,
+    pub temperature_2m_max: String,
+    pub temperature_2m_min: String,
+    pub weather_code: String,
+    pub apparent_temperature_min: String,
+    pub apparent_temperature_max: String,
+    pub wind_speed_10m_max: String,
+    pub precipitation_probability_max: String,
+}
+
 const FORECAST_BASE_URL: &str = "https://api.open-meteo.com/v1/forecast";
 const GEOCODING_BASE_URL: &str = "https://geocoding-api.open-meteo.com/v1/search";
-const DEFAULTS: Defaults = Defaults {
+const FORECAST_DEFAULTS: ForecastDefaults = ForecastDefaults {
     timezone: "auto",
     forecast_days: 3,
     wind_speed_unit: "mph",
     temperature_unit: "fahrenheit",
-    precipitation_unit: "inch"
+    precipitation_unit: "inch",
+};
+const GEOCODING_DEFAULTS: GeocodingDefaults = GeocodingDefaults {
+    count: 10,
+    language: "en",
+    format: "json",
 };
 
-pub fn test_form_req_url() -> String {
+pub async fn test_form_req_url() -> Result<GeocodingResponse> {
     let daily_opts: Vec<DailyOpts> = vec![
         DailyOpts::Temperature2mMax,
         DailyOpts::Temperature2mMin,
@@ -123,7 +198,7 @@ pub fn test_form_req_url() -> String {
         DailyOpts::WeatherCode,
         DailyOpts::ApparentTemperatureMin,
         DailyOpts::ApparentTemperatureMax,
-        DailyOpts::PrecipitationProbabilityMax
+        DailyOpts::PrecipitationProbabilityMax,
     ];
 
     let hourly_opts: Vec<HourlyOpts> = vec![
@@ -135,61 +210,40 @@ pub fn test_form_req_url() -> String {
         HourlyOpts::Precipitation,
     ];
 
-    /*
-    &timezone=auto
-&forecast_days=3
-&wind_speed_unit=mph
-&temperature_unit=fahrenheit
-&precipitation_unit=inch\
- */
-    let sample_req: WeatherRequestData = WeatherRequestData {
+    let sample_req: ForecastRequestData = ForecastRequestData {
         latitude: 30.57881,
         longitude: -97.85307,
         daily: daily_opts,
         hourly: hourly_opts,
-        timezone: String::from(DEFAULTS.timezone),
-        forecast_days: DEFAULTS.forecast_days,
-        wind_speed_unit: String::from(DEFAULTS.wind_speed_unit),
-        temperature_unit: String::from(DEFAULTS.temperature_unit),
-        precipitation_unit: String::from(DEFAULTS.precipitation_unit)
+        timezone: String::from(FORECAST_DEFAULTS.timezone),
+        forecast_days: FORECAST_DEFAULTS.forecast_days,
+        wind_speed_unit: String::from(FORECAST_DEFAULTS.wind_speed_unit),
+        temperature_unit: String::from(FORECAST_DEFAULTS.temperature_unit),
+        precipitation_unit: String::from(FORECAST_DEFAULTS.precipitation_unit),
     };
 
-    construct_forecast_url(&sample_req)
+    let sample_geo_req: GeocodingRequestData = GeocodingRequestData {
+        name: String::from("78641"),
+        count: GEOCODING_DEFAULTS.count,
+        language: String::from(GEOCODING_DEFAULTS.language),
+        format: String::from(GEOCODING_DEFAULTS.format),
+    };
+
+    println!("{:#?}", send_forecast_get(&sample_req).await.unwrap());
+
+    send_geocoding_get(&sample_geo_req).await
 }
 
-/* sample req url:
-https://api.open-meteo.com/v1/forecast
-?latitude=30.57881
-&longitude=-97.85307
-&daily=
-    temperature_2m_max,
-    temperature_2m_min,
-    weather_code,
-    apparent_temperature_min,
-    apparent_temperature_max,
-    wind_speed_10m_max,
-    precipitation_probability_max
-&hourly=
-    temperature_2m,
-    apparent_temperature,
-    precipitation_probability,
-    precipitation,
-    weather_code,
-    wind_speed_10m
-&timezone=auto
-&forecast_days=3
-&wind_speed_unit=mph
-&temperature_unit=fahrenheit
-&precipitation_unit=inch
-*/
-
-fn construct_forecast_url(data: &WeatherRequestData) -> String {
+fn construct_forecast_url(data: &ForecastRequestData) -> String {
     let daily = data.daily.iter().map(DailyOpts::as_str).collect::<Vec<_>>();
-    let hourly = data.hourly.iter().map(HourlyOpts::as_str).collect::<Vec<_>>();
+    let hourly = data
+        .hourly
+        .iter()
+        .map(HourlyOpts::as_str)
+        .collect::<Vec<_>>();
 
     let url: String = format!(
-        "{}?latitude={}&longitude={}&daily={}&hourly={}&timezone={}&forecast_days={}&wind_speed_unit={}&temperature_unit={}precipitation_unit={}
-        ",
+        "{}?latitude={}&longitude={}&daily={}&hourly={}&timezone={}&forecast_days={}&wind_speed_unit={}&temperature_unit={}&precipitation_unit={}",
         FORECAST_BASE_URL,
         data.latitude,
         data.longitude,
@@ -203,4 +257,37 @@ fn construct_forecast_url(data: &WeatherRequestData) -> String {
     );
 
     url
+}
+
+fn construct_geocoding_url(data: &GeocodingRequestData) -> String {
+    let url: String = format!(
+        "{}?name={}&count={}&language={}&format={}",
+        GEOCODING_BASE_URL, data.name, data.count, data.language, data.format,
+    );
+
+    url
+}
+
+async fn send_forecast_get(data: &ForecastRequestData) -> Result<ForecastResponse> {
+    let url: String = construct_forecast_url(data);
+
+    let res = get(url)
+        .await?
+        .error_for_status()?
+        .json::<ForecastResponse>()
+        .await?;
+
+    Ok(res)
+}
+
+async fn send_geocoding_get(data: &GeocodingRequestData) -> Result<GeocodingResponse> {
+    let url: String = construct_geocoding_url(data);
+
+    let res = get(url)
+        .await?
+        .error_for_status()?
+        .json::<GeocodingResponse>()
+        .await?;
+
+    Ok(res)
 }
