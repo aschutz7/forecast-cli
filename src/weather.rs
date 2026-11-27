@@ -194,6 +194,7 @@ pub struct DailyUnits {
 const FORECAST_BASE_URL: &str = "https://api.open-meteo.com/v1/forecast";
 const GEOCODING_BASE_URL: &str = "https://geocoding-api.open-meteo.com/v1/search";
 const FORECAST_DEFAULTS: ForecastDefaults = ForecastDefaults {
+    // use the location's timezone so tomorrow lines up with the city being searched
     timezone: "auto",
     forecast_days: 3,
     wind_speed_unit: "mph",
@@ -239,6 +240,7 @@ fn construct_forecast_request(lat: f64, lon: f64) -> ForecastRequestData {
 
 fn construct_geocoding_request(search: String) -> GeocodingRequestData {
     GeocodingRequestData {
+        // spaces and things like & can mess up the query if the city name goes in as-is
         name: encode(&search).to_string(),
         count: GEOCODING_DEFAULTS.count,
         language: String::from(GEOCODING_DEFAULTS.language),
@@ -247,6 +249,7 @@ fn construct_geocoding_request(search: String) -> GeocodingRequestData {
 }
 
 fn construct_forecast_url(data: &ForecastRequestData) -> String {
+    // reuse the serde names so the query matches the api's spelling for fields like temperature_2m_max
     let daily = data.daily.iter().map(DailyOpts::as_str).collect::<Vec<_>>();
     let hourly = data
         .hourly
@@ -305,6 +308,7 @@ async fn send_geocoding_get(data: &GeocodingRequestData) -> Result<GeocodingResp
 }
 
 fn extract_tomorrow_forecast(response: &ForecastResponse) -> anyhow::Result<TomorrowForecast> {
+    // the api sends a separate list for each daily value, and index 0 is today at that location
     let daily = &response.daily;
 
     let date = daily
@@ -365,6 +369,7 @@ pub async fn cascade_fetch_weather(search: &str) -> anyhow::Result<TomorrowForec
     utils::display(0, "Fetching location...".to_string());
     let location_res = send_geocoding_get(&construct_geocoding_request(search.to_string())).await?; // from testing, sometimes two results may oddly be output for same area with differing lat/lon, in that case, just use first that matches name exactly (ignore caps)
     let results: Vec<GeocodingSearchResult> = location_res.results;
+    // a zip search can come back with a city name, so keep the api's first hit if the text doesn't match
     let Some(usable_result) = results
         .iter()
         .find(|r| r.name.eq_ignore_ascii_case(&search))
@@ -388,6 +393,7 @@ pub async fn cascade_fetch_weather(search: &str) -> anyhow::Result<TomorrowForec
         ))
     }
 
+    // give one unavailable message if tomorrow is missing any of the fields we need
     if weather_res.daily.time.get(1).is_none()
         || weather_res.daily.weather_code.get(1).is_none()
         || weather_res.daily.apparent_temperature_max.get(1).is_none()

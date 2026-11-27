@@ -11,6 +11,7 @@ pub struct ClothingRecommendation {
 }
 
 pub fn decide_recommendation(forecast: weather::TomorrowForecast) -> ClothingRecommendation {
+    // the feels-like midpoint gives us a starting point for the whole day, with cold lows handled below
     let feels_like_midpoint = (forecast.feels_like_low + forecast.feels_like_high) / 2.0;
 
     let top_recommendation = if feels_like_midpoint < 32.0 {
@@ -25,6 +26,7 @@ pub fn decide_recommendation(forecast: weather::TomorrowForecast) -> ClothingRec
         "Lightweight t-shirt"
     };
 
+    // a mild midpoint can hide a cold low, so check both before settling for a windbreaker
     let outerwear_recommendation = if feels_like_midpoint < 20.0 {
         Some("Heavy winter jacket")
     } else if feels_like_midpoint < 35.0 {
@@ -54,6 +56,7 @@ pub fn decide_recommendation(forecast: weather::TomorrowForecast) -> ClothingRec
     };
 
     let w_code = forecast.weather_code;
+    // give snow and ice their own boots first, since a high chance of precip could include either
     let shoes_recommendation = if matches!(w_code, 71..=77 | 85..=86) {
         "Insulated water-resistant boots"
     } else if matches!(w_code, 56..=57 | 66..=67) {
@@ -68,6 +71,7 @@ pub fn decide_recommendation(forecast: weather::TomorrowForecast) -> ClothingRec
         "Regular sneakers / any shoes"
     };
 
+    // use the low for cold-weather extras since someone might be out during the coldest part of the day
     let mut accessories_recommendation = Vec::new();
     if forecast.feels_like_low < 32.0 {
         accessories_recommendation.push("Gloves".to_string());
@@ -78,6 +82,7 @@ pub fn decide_recommendation(forecast: weather::TomorrowForecast) -> ClothingRec
     if forecast.feels_like_low < 10.0 {
         accessories_recommendation.push("Scarf".to_string());
     }
+    // the precip chance can include snow too, so check for rain or drizzle before suggesting an umbrella
     if forecast.precipitation_probability >= 50 && matches!(w_code, 51..=55 | 61..=65 | 80..=82) {
         accessories_recommendation.push("Umbrella".to_string());
     }
